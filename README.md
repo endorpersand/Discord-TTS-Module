@@ -26,16 +26,18 @@ Theoretically, you should be able to plop `tts.py` and `helpers/` into a bot and
 
 Basic functionality:
 
-![Demonstrating basic functionality](./.github/assets/d1_basics.mp4)
+https://user-images.githubusercontent.com/66182721/180317343-7f1c5d68-eaca-43ba-8613-3a6ec984651f.mp4
 
 The bot can also follow you through voice channels:
 
-![Demonstrating VC following](./.github/assets/d2_follow.mp4)
+
+https://user-images.githubusercontent.com/66182721/180317390-d9581ac6-3893-4144-9f85-bcf5e8efae3c.mp4
+
 
 The bot can also have custom voices applied:
 
-![Demonstrating custom voices](./.github/assets/d3_voices.mp4)
+https://user-images.githubusercontent.com/66182721/180317414-1acdd739-adc7-4879-aad8-596a08de8855.mp4
 
 Or even custom voice effects:
 
-![Demonstrating custom effects](./.github/assets/d4_effects.mp4)
+https://user-images.githubusercontent.com/66182721/180317455-bf980e23-55b4-4b28-ae70-b061ac42f010.mp4
