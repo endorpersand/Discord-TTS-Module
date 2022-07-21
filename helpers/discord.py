@@ -1,18 +1,10 @@
+import typing
 import discord
 from discord.ext import commands
 
 import asyncio
-from asyncio import sleep
-from io import BytesIO, StringIO
+from io import StringIO
 from typing import Optional
-
-async def temporary_reaction(ctx: commands.Context, emoji, secs):
-    """
-    Reaction that shows up for a temporary amount of time
-    """
-    await ctx.message.add_reaction(emoji)
-    await sleep(secs)
-    await ctx.message.remove_reaction(emoji, ctx.bot.user)
 
 async def multireaction(bot: commands.Bot, msg: discord.Message, emojis: "list[discord.Emoji | discord.PartialEmoji | str]", *, allowed_users: "list[int]" = None, check = None, timeout = None) -> "tuple[Optional[discord.Reaction], Optional[discord.User]]":
     """
@@ -69,3 +61,16 @@ async def send_multi(ctx: commands.Context, msg: str):
             else:
                 break
         await ctx.send("\n".join(outlines))
+
+def in_vc(ctx: commands.Context):
+    """
+    Command check: Checks that user is currently in VC.
+
+    This check assumes the command is NOT run in a DM channel.
+    """
+    author = typing.cast(discord.Member, ctx.author)
+    vchan = author.voice and author.voice.channel # author.voice?.channel
+    
+    if vchan is None:
+        raise commands.CheckFailure("You are not in VC!")
+    return True

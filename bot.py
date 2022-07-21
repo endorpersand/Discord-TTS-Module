@@ -1,7 +1,6 @@
 import io
 
 import yaml
-import core.sql as sql # ONLY FOR PYLANCE LINTER PURPOSES
 import traceback
 import logging
 import sys
@@ -13,8 +12,6 @@ from pathlib import Path
 
 
 class Bot(commands.Bot):
-    Database: "type[sql.Database]"
-    
     def __init__(self, command_prefix='?', *args, **kwargs):
         logging.basicConfig(level=logging.INFO, format='[%(name)s %(levelname)s] %(message)s')
         self.logger = logging.getLogger('bot')
@@ -83,9 +80,8 @@ class Bot(commands.Bot):
             self.load_module(m)
 
     def run(self, token):
-        self.load_dir("core")
-        self.load_dir("cogs")
-
+        self.load_module("tts")
+        
         self.logger.info(f'Loaded {len(self.cogs)} cogs')
         super().run(token)
 

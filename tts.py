@@ -1,30 +1,40 @@
-import functools
-import inspect
-import json
-import textwrap
-from types import FunctionType
-import typing
 import discord
 from discord.ext import commands, tasks
 
 import dataclasses
 import datetime as dt
+import functools
 import gtts.lang
+import inspect
+import json
 import re
 import requests
 import sox
+import textwrap
+import typing
 
 from bot import Bot  # ONLY FOR PYLANCE LINTER PURPOSES
 from collections import deque
 from collections.abc import Iterable
 from gtts import gTTS
+from importlib import reload
 from pathlib import Path
+from types import FunctionType
 from typing import Any, Callable, ClassVar, NewType, Optional, TypeVar
-from core.sql import Database, UserTable
-from utils import multireaction, send_multi
+
+import helpers.sql
+import helpers.discord
+# allow hotloading
+reload(helpers.sql)
+reload(helpers.discord)
+
+from helpers.sql import Database, UserTable
+from helpers.discord import in_vc, multireaction, send_multi
 
 # discord.VoiceState = state of member voice, used to query data about other members' vc
 # discord.VoiceClient = bot voice channel, 1 per guild where bot is in vc, used to do stuff to bot voice
+
+T = TypeVar("T")
 
 DEFAULT_VC_TEXT = ("voice-context", "vc", "vc-text")
 """
@@ -36,27 +46,6 @@ CACHE_FOLDER = Path("_cache")
 Audio files have to be created to temporarily store sent messages. They are saved to this folder.
 """
 CACHE_FOLDER.mkdir(exist_ok=True)
-
-def in_vc(ctx: commands.Context):
-    """
-    Command check: Checks that user is currently in VC.
-
-    This check assumes the command is NOT run in a DM channel.
-    """
-    author = typing.cast(discord.Member, ctx.author)
-    vchan = author.voice and author.voice.channel # author.voice?.channel
-    
-    if vchan is None:
-        raise commands.CheckFailure("You are not in VC!")
-    return True
-
-T = TypeVar("T")
-def any_from(st: "Iterable[T]") -> T:
-    """
-    Utility function to get any element from an iterable 
-    (though, in particular, this function is aimed at `Set`s).
-    """
-    return next(iter(st))
 
 # For whatever reason, the encoder seems to have a strange encoding order. 
 # (Could be because `SoxFilter` is a dataclass? Not sure)
@@ -1021,9 +1010,7 @@ class TTS(commands.Cog):
         """
         Initialize tables.
         """
-        bot = self.bot
-
-        self.db = db = bot.Database("tts.db")
+        self.db = db = Database("tts.db")
         self.update_sql_tables()
 
         # create tables if missing
