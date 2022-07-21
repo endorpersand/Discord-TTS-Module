@@ -40,7 +40,7 @@ class Bot(commands.Bot):
         info = traceback.format_exception(*info, chain=False)
         self.logger.error('Unhandled exception - {}'.format(''.join(info)))
 
-    async def on_command_error(ctx: commands.Context, exception: Exception):
+    async def on_command_error(self, ctx: commands.Context, exception: Exception):
         bot = ctx.bot
 
         info = traceback.format_exception(type(exception), exception, exception.__traceback__, chain=False)
