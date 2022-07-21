@@ -949,9 +949,10 @@ class TTS(commands.Cog):
                     None
                 )
 
-                await vc_text_chan.send(f"{m.mention}, I cannot join your VC, so bye")
                 gh.remove_member(m)
                 await gh.join_output_channel()
+                await vc_text_chan.send(f"{m.mention}, I cannot join your VC, so \U0001F44B")
+                return
 
         # cancel dc tasks when user joins tracked channel
         if gh.is_output_channel(after.channel):
@@ -964,7 +965,12 @@ class TTS(commands.Cog):
     async def check_inactives(self):
         if self.db.is_closed(): return
 
-        self.db.execute("""DELETE FROM tracked_users WHERE strftime('%s', timeout) < strftime('%s', 'now')""")
+        if self.db.table_exists("tracked_users"):
+            self.db.execute("""
+                DELETE FROM tracked_users 
+                WHERE strftime('%s', timeout) < strftime('%s', 'now')
+            """)
+
         for g in self.bot.guilds:
             gh = self.guild_handler(g)
 
