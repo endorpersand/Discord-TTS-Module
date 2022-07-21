@@ -25,6 +25,7 @@ from utils import multireaction, send_multi
 # discord.VoiceClient = bot voice channel, 1 per guild where bot is in vc, used to do stuff to bot voice
 
 DEFAULT_VC_TEXT = ("voice-context", "vc", "vc-text")
+CACHE_FOLDER = Path("cache")
 
 def in_vc(ctx):
     vchan = ctx.author.voice and ctx.author.voice.channel # ctx.author.voice?.channel
@@ -591,8 +592,8 @@ class SoxFilter:
         return f"{self.fun.__name__}({params})"
 
 class AudibleText(gTTS):
-    AUDIO_PATH1 = Path('cache/tts/gtts_out.mp3')
-    AUDIO_PATH2 = Path('cache/tts/sox_out.mp3')
+    AUDIO_PATH1 = CACHE_FOLDER / 'gtts_out.mp3'
+    AUDIO_PATH2 = CACHE_FOLDER / 'sox_out.mp3'
 
     def __init__(self, text, voice=Voice()):
         self.voice = voice
