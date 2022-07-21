@@ -3,6 +3,7 @@ import inspect
 import json
 import textwrap
 from types import FunctionType
+import typing
 import discord
 from discord.ext import commands, tasks
 
@@ -15,9 +16,10 @@ import sox
 
 from bot import Bot  # ONLY FOR PYLANCE LINTER PURPOSES
 from collections import deque
+from collections.abc import Iterable
 from gtts import gTTS
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Optional
+from typing import Any, Callable, ClassVar, Optional, TypeVar
 from core.sql import Database, UserTable
 from utils import multireaction, send_multi
 
@@ -25,15 +27,34 @@ from utils import multireaction, send_multi
 # discord.VoiceClient = bot voice channel, 1 per guild where bot is in vc, used to do stuff to bot voice
 
 DEFAULT_VC_TEXT = ("voice-context", "vc", "vc-text")
-CACHE_FOLDER = Path("cache")
+"""
+Channels that are automatically included as voice context channels if found.
+"""
 
-def in_vc(ctx):
-    vchan = ctx.author.voice and ctx.author.voice.channel # ctx.author.voice?.channel
+CACHE_FOLDER = Path("cache")
+"""
+Audio files have to be created to temporarily store sent messages. They are saved to this folder.
+"""
+
+def in_vc(ctx: commands.Context):
+    """
+    Command check: Checks that user is currently in VC.
+
+    This check assumes the command is NOT run in a DM channel.
+    """
+    author = typing.cast(discord.Member, ctx.author)
+    vchan = author.voice and author.voice.channel # author.voice?.channel
+    
     if vchan is None:
         raise commands.CheckFailure("You are not in VC!")
     return True
 
-def any_elem(st: set):
+T = TypeVar("T")
+def any_from(st: "Iterable[T]") -> T:
+    """
+    Utility function to get any element from an iterable 
+    (though, in particular, this function is aimed at `Set`s).
+    """
     return next(iter(st))
 
 def sf_from_json(o: "dict[str, Any]") -> "SoxFilter | dict[str, Any]":
@@ -651,8 +672,8 @@ class TTS(commands.Cog):
                 await gh.join_channel(after.channel)
             except commands.UserInputError:
                 # if user joins inaccessible channel & that channel would be the tracked vc, send an err
-                vc_text_chan = guild.get_channel(any_elem(gh.vc_text))
-                m = guild.get_member(any_elem(gh.tracked_users))
+                vc_text_chan = guild.get_channel(any_from(gh.vc_text))
+                m = guild.get_member(any_from(gh.tracked_users))
 
                 await vc_text_chan.send(f"{m.mention}, I cannot join your VC, so bye")
                 gh.remove_member(m)
