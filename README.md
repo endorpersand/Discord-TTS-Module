@@ -8,6 +8,8 @@ This project was mainly developed from April 2021-June 2022.
 
 ## Usage
 
+This module has been tested with Python 3.9 (though very likely would work with newer versions). So, make sure to install Python 3.9+.
+
 Install dependencies with:
 
 ```sh
@@ -30,9 +32,7 @@ https://user-images.githubusercontent.com/66182721/180317343-7f1c5d68-eaca-43ba-
 
 The bot can also follow you through voice channels:
 
-
 https://user-images.githubusercontent.com/66182721/180317390-d9581ac6-3893-4144-9f85-bcf5e8efae3c.mp4
-
 
 The bot can also have custom voices applied:
 
