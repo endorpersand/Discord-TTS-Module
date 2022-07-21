@@ -940,8 +940,14 @@ class TTS(commands.Cog):
                 await gh.join_channel(after.channel)
             except commands.UserInputError:
                 # if user joins inaccessible channel & that channel would be the tracked vc, send an err
-                vc_text_chan = guild.get_channel(any_from(gh.vc_text))
-                m = guild.get_member(any_from(gh.tracked_users))
+                vc_text_chan = next(
+                    (c for cid in gh.vc_text if (c := guild.get_channel(cid)) is not None),
+                    None
+                )
+                m = next(
+                    (m for uid in gh.tracked_users if (m := guild.get_member(uid)) is not None),
+                    None
+                )
 
                 await vc_text_chan.send(f"{m.mention}, I cannot join your VC, so bye")
                 gh.remove_member(m)
@@ -1005,6 +1011,9 @@ class TTS(commands.Cog):
         pass
 
     def prepare_data(self):
+        """
+        Initialize tables.
+        """
         bot = self.bot
 
         self.db = db = bot.Database("tts.db")
@@ -1047,20 +1056,29 @@ class TTS(commands.Cog):
     ### INTERFACE WITH GUILD DATA ###
 
     def guild_handler(self, guild: discord.Guild) -> GuildHandler:
+        """
+        Get this guild's guild handler
+        """
         return self.guild_handlers.setdefault(guild.id, GuildHandler(self.bot, self.db, guild.id))
 
     async def track_member(self, member: discord.Member):
+        """
+        Add a user to the list of tracked members
+        """
         guild = member.guild
         gh = self.guild_handler(guild)
         gh.add_member(member)
 
-        chan = (bm := guild.get_member(self.bot.user.id)) \
-               and bm.voice \
-               and bm.voice.channel # bm?.voice?.channel
+        chan = ((bm := gh.bot_member)
+               and bm.voice
+               and bm.voice.channel) # bm.voice?.channel
         if chan is None:
             await gh.join_tracked_channel()
 
     async def untrack_member(self, member: discord.Member):
+        """
+        Remove a user from the list of tracked members
+        """
         gh = self.guild_handler(member.guild)
         gh.remove_member(member)
 
@@ -1079,13 +1097,18 @@ class TTS(commands.Cog):
         """
         Send a greet. "X says hello!"
         """
-        gh = self.guild_handler(ctx.guild)
-        author_vchan = ctx.author.voice and ctx.author.voice.channel # ctx.author.voice?.channel
+
+        guild = typing.cast(discord.Guild, ctx.guild) # cannot be None, since TTS commands should not be called in DMs
+        gh = self.guild_handler(guild)
+
+        author = typing.cast(discord.Member, ctx.author)
+        author_vchan = author.voice and author.voice.channel # ctx.author.voice?.channel
         if gh.is_tracked_channel(author_vchan):
             gh.play_text_by(f"{ctx.author.name} says hello!", by=ctx.author)
 
-    async def tts(self, ctx):
-        pass
+    async def tts(self, ctx: commands.Context):
+        await ctx.send_help("tts")
+
     tts.__doc__ = """
         When activated (with `tts on`), the bot will repeat anything you type in a voice context
          channel (any channel under `tts channels`, your DMs, or the channel's integrated chat)
@@ -1095,8 +1118,30 @@ class TTS(commands.Cog):
         with `#`. Example: ```
         # hello! this message is ignored!
         ```
+
+        **# General**
+        `]tts on`, `]tts off` to toggle TTS
+        `]tts status` to see the guild's current TTS status
+        `]tts channels` to query/edit the current voice context channels.
+        `]tts skip` to skip the current messsage (if it is going on for too long or is glitched)
+
+        **# User Settings**
+        `]tts accent` to query/edit your TTS accent
+        `]tts pitch` to adjust your TTS pitch
+        `]tts effects` to add effects to your TTS voice
+
+        **# Text Substitutions**
+        `]tts subs add/remove` to add text substitutions to your TTS
+        `]tts subs global add/remove` to add text substitutions to all TTS
     """
-    tts = commands.group()(tts)
+    tts = commands.group(invoke_without_command=True)(tts) # type: ignore
+
+    @tts.command(name="help")
+    async def tts_help(self, ctx: commands.Context):
+        """
+        Sends the help message.
+        """
+        await self.tts(ctx)
 
     @tts.command(name="on", aliases=["connect", "join"])
     @commands.check(in_vc)
@@ -1231,7 +1276,7 @@ class TTS(commands.Cog):
     @tts_accent.command(name="list")
     async def tts_accent_list(self, ctx):
         """
-        List of valid accents (warning: slightly spammy)
+        Get the list of valid accent aliases. (warning: slightly spammy)
         """
         acc_list = sorted(Voice.all_accent_aliases(), key=lambda v: (not v.startswith("English"), v))
         await ctx.send("```\n" + "\n".join(acc_list) + "```")
@@ -1263,9 +1308,7 @@ class TTS(commands.Cog):
     @tts_pitch.command(name="set")
     async def tts_pitch_set(self, ctx, new_pitch: float):
         """
-        Longhand for setting your pitch
-
-        All valid pitchs are in `]tts pitch list`.
+        Set your TTS voice's pitch
         """
         self.edit_voice(ctx, pitch=new_pitch)
         return await self.tts_voice(ctx)
@@ -1406,7 +1449,7 @@ class TTS(commands.Cog):
         Remove a filter.
 
         This command takes an index and removes the filter at that index.
-        To find indexes, check `]tts effects`.
+        Check `]tts effects` for effect indexes.
         """
         prefs: Voice = self.lang_prefs[ctx.author.id]
 
@@ -1432,6 +1475,8 @@ class TTS(commands.Cog):
     async def tts_effects_replace(self, ctx: commands.Context, index: int, effect: str, *, args):
         """
         Replace the filter at index with a new effect.
+
+        Check `]tts effects` for effect indexes.
         """
         prefs: Voice = self.lang_prefs[ctx.author.id]
         
@@ -1452,6 +1497,8 @@ class TTS(commands.Cog):
     async def tts_effects_insert(self, ctx: commands.Context, index: int, effect: str, *, args):
         """
         Insert the filter at the index, shifting everything down.
+
+        Check `]tts effects` for effect indexes.
         """
         prefs: Voice = self.lang_prefs[ctx.author.id]
         
@@ -1472,6 +1519,8 @@ class TTS(commands.Cog):
     async def tts_effects_swap(self, ctx: commands.Context, index1: int, index2: int):
         """
         Swap the filters at the two specified indexes.
+
+        Check `]tts effects` for effect indexes.
         """
         prefs: Voice = self.lang_prefs[ctx.author.id]
         
@@ -1494,7 +1543,7 @@ class TTS(commands.Cog):
     @tts_effects.command(name="clear")
     async def tts_effects_clear(self, ctx: commands.Context):
         """
-        Clear all filters.
+        Clear all added filters.
         """
         self.edit_voice(ctx, False, effects=[], use_effects=False)
         await ctx.send("Cleared all filters")
@@ -1566,8 +1615,8 @@ class TTS(commands.Cog):
 
         await self.remove_phondict_prompt(ctx, phondict, key)
 
-    @tts.command(name="guild")
-    async def tts_guild(self, ctx):
+    @tts.command(name="status", aliases=["guild"])
+    async def tts_status(self, ctx):
         """
         Get the TTS status on the current guild.
         """
@@ -1578,7 +1627,7 @@ class TTS(commands.Cog):
         
         await ctx.send(string)
 
-    @tts.group(name="channels", invoke_without_command=True)
+    @tts.group(name="channels", aliases=["context"], invoke_without_command=True)
     async def tts_channels(self, ctx):
         """
         Check which channels are being listened to for messages.
