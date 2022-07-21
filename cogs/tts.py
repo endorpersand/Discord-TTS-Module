@@ -19,7 +19,7 @@ from collections import deque
 from collections.abc import Iterable
 from gtts import gTTS
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Optional, TypeVar
+from typing import Any, Callable, ClassVar, NewType, Optional, TypeVar
 from core.sql import Database, UserTable
 from utils import multireaction, send_multi
 
@@ -135,7 +135,9 @@ class ParseEffects:
     # You: Wait. Did you manually write a whole parser JUST to read effect arguments?
     # Me: Yes. And?
 
-    NO_MATCH = object()
+    # HACK: Pylance does not support sentinels (i.e. object()), so:
+    NoMatchType = NewType("NO_MATCH", object)
+    NO_MATCH = NoMatchType(object())
     """
     Sentinel object designating that the next token could not be matched to the given type.
     """
@@ -199,7 +201,7 @@ class ParseEffects:
 
             raise ValueError(f"{msg}:\n{l}**{m}**...")
 
-    def require(self, match_fn: Callable[[], T], expected: str = ""):
+    def require(self, match_fn: Callable[[], "T | NoMatchType"], expected: str = "") -> T:
         """
         Require that the next token is matched by the specified match function.
 
@@ -208,7 +210,7 @@ class ParseEffects:
 
         hit = match_fn()
 
-        if hit is self.NO_MATCH:
+        if isinstance(hit, self.NoMatchType):
             if len(expected) == 0: self.err_at_cursor("Unexpected token")
             self.err_at_cursor(f"Expected {expected} here")
         
@@ -297,11 +299,11 @@ class ParseEffects:
             out = []
 
             unit = self.match_unit()
-            if unit is not self.NO_MATCH: 
+            if not isinstance(unit, self.NoMatchType): 
                 out.append(unit)
                 while self.matches(","):
                     unit = self.match_unit()
-                    if unit is not self.NO_MATCH: 
+                    if not isinstance(unit, self.NoMatchType):
                         out.append(unit)
                     else:
                         break
@@ -317,7 +319,7 @@ class ParseEffects:
         or error if it is partially through parsing an entry and cannot recognize the tokens as an entry.
         """
         key = self.match_int()
-        if key is not self.NO_MATCH:
+        if not isinstance(key, self.NoMatchType):
             key = typing.cast(int, key)
 
             self.require_str(":")
@@ -333,12 +335,12 @@ class ParseEffects:
             out = {}
 
             entry = self.match_entry()
-            if entry is not self.NO_MATCH:
+            if not isinstance(entry, self.NoMatchType):
                 k, v = entry
                 out[k] = v
                 while self.matches(","):
                     entry = self.match_entry()
-                    if entry is not self.NO_MATCH: 
+                    if not isinstance(entry, self.NoMatchType):
                         k, v = entry
                         out[k] = v
                     else:
@@ -364,7 +366,7 @@ class ParseEffects:
         )
 
         return next(
-            (res for f in match_fns if (res := f()) is not self.NO_MATCH),
+            (res for f in match_fns if not isinstance(res := f(), self.NoMatchType)),
             self.NO_MATCH
         )
 
