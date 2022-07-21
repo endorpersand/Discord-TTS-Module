@@ -39,7 +39,7 @@ class Voice:
     lang: str
     tld: str
     pitch: float
-    effects: "tuple[SoxFilter, ...]"
+    effects: "list[SoxFilter]"
     use_effects: bool
 
     valid_accents: "ClassVar[dict[tuple[str, str], tuple[str, ...]]]" = {
@@ -97,7 +97,7 @@ class Voice:
         self.lang = lang
         self.tld = tld
         self.pitch = min(max(-12, pitch), 12)
-        self.effects = tuple(effects) if effects is not None else ()
+        self.effects = list(effects) if effects is not None else ()
         self.use_effects = bool(use_effects)
 
     @classmethod
