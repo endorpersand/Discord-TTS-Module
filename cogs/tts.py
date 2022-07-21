@@ -430,20 +430,20 @@ class GuildHandler:
                     self.vc_text.add(c.id)
 
         self.misc_guild_data = self.db.GuildTable("misc_guild_data", (
-            "tracked_channel int",
+            "output_channel int",
         )).get_row(self.guild_id)
 
         self.queue: "deque[AudibleText]" = deque()
 
     ### ORIGINAL PROPERTIES ###
-    def tracked_channel(self) -> Optional[discord.VoiceChannel]:
+    def output_channel(self) -> "discord.VoiceChannel | discord.StageChannel | None":
         """
         Get the current channel the bot is outputting to, or `None` if not outputting to any channel
         """
         n_users = len(self.tracked_users)
 
         if n_users <= 0:
-            self.misc_guild_data["tracked_channel"] = None
+            self.misc_guild_data["output_channel"] = None
         else:
             chan_ids = ((m := self.guild.get_member(uid)) 
                         and m.voice 
@@ -451,21 +451,21 @@ class GuildHandler:
                         and m.voice.channel.id 
                         for uid in self.tracked_users) # m?.voice?.channel?.id
             chan_ids = filter(lambda e: e is not None, chan_ids)
-            self.misc_guild_data["tracked_channel"] = next(chan_ids, None)
+            self.misc_guild_data["output_channel"] = next(chan_ids, None)
 
-        return self.bot.get_channel(self.misc_guild_data["tracked_channel"])
+        return self.bot.get_channel(self.misc_guild_data["output_channel"])
 
     ###
 
-    def is_tracked_channel(self, channel: Optional[discord.VoiceChannel]) -> bool:
+    def is_output_channel(self, channel: "discord.VoiceChannel | discord.StageChannel | None") -> bool:
         """
         Returns whether the specified channel is the tracked channel
         If specified channel is `None`, this will always return `False`
         """
-        return channel is not None and channel == self.tracked_channel()
+        return channel is not None and channel == self.output_channel()
 
     ### VC MOVEMENT ###
-    async def join_channel(self, channel: Optional[discord.VoiceChannel]):
+    async def join_channel(self, channel: "discord.VoiceChannel | discord.StageChannel | None"):
         """
         Join the specified voice channel (or disconnect if `None`)
         """
@@ -496,12 +496,12 @@ class GuildHandler:
         if vc is not None:
             await vc.disconnect()
 
-    async def join_tracked_channel(self):
+    async def join_output_channel(self):
         """
         Join the tracked voice channel.
         """
         try:
-            await self.join_channel(self.tracked_channel())
+            await self.join_channel(self.output_channel())
         except commands.UserInputError:
             # If the code lands here, the bot was not able to join the tracked channel
             # This implies the bot does not have the permissions to
@@ -518,7 +518,7 @@ class GuildHandler:
                 if not member_vchan.permissions_for(self.bot_member).connect:
                     self.remove_member(member)
 
-            await self.join_tracked_channel()
+            await self.join_output_channel()
             raise commands.UserInputError("Could not connect to VC, removed tracked users in hidden channels")
     ###
 
@@ -636,8 +636,8 @@ class GuildHandler:
             raise commands.CheckFailure("You are not in VC!")
 
         # fail if user not in same vc
-        tracked_channel = self.tracked_channel()
-        if tracked_channel is not None and vchan_id != tracked_channel.id:
+        out = self.output_channel()
+        if out is not None and vchan_id != out.id:
             raise commands.CheckFailure(f"Cannot bind TTS. You are not in the same VC as {self.bot.user.name}!")
         
         self.clear_timeout(member)
@@ -673,7 +673,7 @@ class GuildHandler:
             AND timeout IS NULL
         """, (self.guild_id,)).fetchall():
             m = self.guild.get_member(uid)
-            if m is not None and not self.is_tracked_channel(m.voice and m.voice.channel):
+            if m is not None and not self.is_output_channel(m.voice and m.voice.channel):
                 self.remove_member(m)
 
     def clear_timeout(self, user: discord.abc.Snowflake):
@@ -951,10 +951,10 @@ class TTS(commands.Cog):
 
                 await vc_text_chan.send(f"{m.mention}, I cannot join your VC, so bye")
                 gh.remove_member(m)
-                await gh.join_tracked_channel()
+                await gh.join_output_channel()
 
         # cancel dc tasks when user joins tracked channel
-        if gh.is_tracked_channel(after.channel):
+        if gh.is_output_channel(after.channel):
             gh.clear_timeout(member)
         else:
             # add task if user leaves tracked channel
@@ -968,7 +968,7 @@ class TTS(commands.Cog):
         for g in self.bot.guilds:
             gh = self.guild_handler(g)
 
-            await gh.join_tracked_channel()
+            await gh.join_output_channel()
             gh.wipe_phantom_users()
 
     @commands.Cog.listener('on_message')
@@ -991,7 +991,7 @@ class TTS(commands.Cog):
                 uchan = author.voice.channel
                 gh = self.guild_handler(author_guild)
 
-                if not gh.is_tracked_channel(uchan): return # and are also in the tracked channel
+                if not gh.is_output_channel(uchan): return # and are also in the tracked channel
 
                 # accept message if:
                 accept_message = (
@@ -1073,7 +1073,7 @@ class TTS(commands.Cog):
                and bm.voice
                and bm.voice.channel) # bm.voice?.channel
         if chan is None:
-            await gh.join_tracked_channel()
+            await gh.join_output_channel()
 
     async def untrack_member(self, member: discord.Member):
         """
@@ -1082,7 +1082,7 @@ class TTS(commands.Cog):
         gh = self.guild_handler(member.guild)
         gh.remove_member(member)
 
-        await gh.join_tracked_channel()
+        await gh.join_output_channel()
 
     def find_tracked_guild(self, user: discord.User) -> Optional[discord.Guild]:
         """
@@ -1103,7 +1103,7 @@ class TTS(commands.Cog):
 
         author = typing.cast(discord.Member, ctx.author)
         author_vchan = author.voice and author.voice.channel # ctx.author.voice?.channel
-        if gh.is_tracked_channel(author_vchan):
+        if gh.is_output_channel(author_vchan):
             gh.play_text_by(f"{ctx.author.name} says hello!", by=ctx.author)
 
     async def tts(self, ctx: commands.Context):
@@ -1622,7 +1622,7 @@ class TTS(commands.Cog):
         """
         gh = self.guild_handler(ctx.guild)
 
-        string = f"VC bound: {gh.tracked_channel()}\n" \
+        string = f"VC bound: {gh.output_channel()}\n" \
                  f"Members bound: {', '.join(f'`{self.bot.get_user(u)}`' for u in gh.tracked_users)}"
         
         await ctx.send(string)
