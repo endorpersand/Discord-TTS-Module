@@ -13,7 +13,7 @@ import sox
 from collections.abc import Iterable
 from gtts import gTTS
 from pathlib import Path
-from typing import Any, Callable, ClassVar, NewType, TypeVar
+from typing import Any, Callable, ClassVar, TypeVar
 
 T = TypeVar("T")
 
@@ -286,8 +286,8 @@ class ParseEffects:
     # Me: Yes. And?
 
     # HACK: Pylance does not support sentinels (i.e. object()), so:
-    NoMatchType = NewType("NO_MATCH", object)
-    NO_MATCH = NoMatchType(object())
+    class NoMatchType: pass
+    NO_MATCH = NoMatchType()
     """
     Sentinel object designating that the next token could not be matched to the given type.
     """
