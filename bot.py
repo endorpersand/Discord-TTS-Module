@@ -1,4 +1,6 @@
 import io
+
+import yaml
 import core.sql as sql # ONLY FOR PYLANCE LINTER PURPOSES
 import traceback
 import logging
@@ -8,7 +10,6 @@ import sys
 import discord
 
 from discord.ext import commands
-from ruamel.yaml import YAML
 from pathlib import Path
 
 
@@ -19,9 +20,7 @@ class Bot(commands.Bot):
         logging.basicConfig(level=logging.INFO, format='[%(name)s %(levelname)s] %(message)s')
         self.logger = logging.getLogger('bot')
 
-        self.yaml = YAML(typ='safe')
-        with open('config/config.yml') as conf_file:
-            self.config = self.yaml.load(conf_file)
+        self.config = yaml.safe_load(open('config/config.yml'))
 
         if 'command_prefix' in self.config:
             command_prefix = self.config['command_prefix']
