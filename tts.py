@@ -226,12 +226,12 @@ class GuildHandler:
             q.popleft().play_in(vc, after=lambda e: self.advance_queue())
 
     @staticmethod
-    def _sub(fn: Callable[[int], "Any | None"]) -> Callable[[re.Match[str]], str]:
+    def _sub(fn: "Callable[[int], Any | None]") -> "Callable[[re.Match[str]], str]":
         """
         Function that converts a `discord.Object` getter function into a match substitution 
         that takes a match to the name of the `discord.Object`.
         """
-        def cb(m: re.Match[str]):
+        def cb(m: "re.Match[str]"):
             oid = int(m[1])
             dobj = fn(oid)
 
@@ -539,7 +539,7 @@ class TTS(commands.Cog):
         author = typing.cast(discord.Member, ctx.author)
         author_vchan = author.voice and author.voice.channel # ctx.author.voice?.channel
         if gh.is_output_channel(author_vchan):
-            gh.play_text_by(f"{ctx.author.name} says hello!", by=ctx.author)
+            gh.play_text_by(f"{ctx.author.nick} says hello!", by=ctx.author)
 
     async def tts(self, ctx: commands.Context):
         await ctx.send_help("tts")
