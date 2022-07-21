@@ -1,0 +1,18 @@
+# development folders
+venv/
+.vscode/
+
+# config
+config/config.yml
+config/token.txt
+
+# cache files
+.DS_Store
+__pycache__/
+
+# data files
+data/**/*.*
+cache/**/*.*
+
+# let .gitkeep override all
+!**/.gitkeep
