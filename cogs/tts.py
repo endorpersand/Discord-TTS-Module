@@ -557,9 +557,10 @@ class GuildHandler:
         """
 
         q = self.queue
+        vc = self.voice_client
 
-        if q: 
-            q.popleft().play_in(self.voice_client, after=lambda e: self.advance_queue())
+        if q and vc: 
+            q.popleft().play_in(vc, after=lambda e: self.advance_queue())
 
     @staticmethod
     def _sub(fn: Callable[[int], "Any | None"]) -> Callable[[re.Match[str]], str]:
@@ -684,10 +685,21 @@ class GuildHandler:
     
 @dataclasses.dataclass
 class Voice:
+    """
+    Dataclass holding information about a voice. This includes:
+    - `lang` & `tld`: the language type and from which `translate.google.[tld]` (both determine voice accent)
+    
+    - `use_effects`: 
+        - If `True`, use `effects` and ignore `pitch`.
+        - If `False`, use `pitch` and ignore `effects`.
+    - `pitch`: How pitch-shifted this voice is
+    - `effects`: Sox filter effects applied onto this voice
+    """
+
     lang: str
     tld: str
     pitch: float
-    effects: "list[SoxFilter]"
+    effects: "tuple[SoxFilter, ...]"
     use_effects: bool
 
     valid_accents: "ClassVar[dict[tuple[str, str], tuple[str, ...]]]" = {
@@ -710,14 +722,20 @@ class Voice:
         ("es", "com"):    ("Spanish (Mexico)", "Spanish"),
         ("es", "es"):     ("Spanish (Spain)",),
     }
+    """
+    A mapping from `(lang, tld)` pair to that accent's aliases
+    """
 
-    # request tlds from google
-    # they are of the format: .google.tld, so remove the ".google." to get the tld
+    # This request of TLDs from Google is given as a list of domains in the format: `.google.tld`
+    # Thus, to get the valid *TLDs*, remove the `.google.`
     __resp = requests.get("https://www.google.com/supported_domains")
     allowed_tlds = [tld[8:] for tld in __resp.content.decode('utf-8').splitlines()]
-    
+    """
+    All `tld`s accepted by Google Translate.
+    """
+
     @classmethod
-    def all_accents(cls):
+    def all_accent_aliases(cls):
         for name in cls.valid_accents.values():
             yield from name
 
@@ -726,7 +744,7 @@ class Voice:
         lang: str = "en", 
         tld: str = "com", 
         pitch: float = 0, 
-        effects: "list[SoxFilter] | None" = None,
+        effects: "Iterable[SoxFilter] | None" = None,
         use_effects: bool = False
     ):
         langs = tuple(k for k, _ in self.valid_accents)
@@ -739,11 +757,17 @@ class Voice:
         self.lang = lang
         self.tld = tld
         self.pitch = min(max(-12, pitch), 12)
-        self.effects = effects or []
+        self.effects = tuple(effects) if effects is not None else ()
         self.use_effects = bool(use_effects)
 
     @classmethod
-    def from_name(cls, name, pitch=0) -> "Voice":
+    def from_name(cls, name: str, pitch=0):
+        """
+        Parses a name into a voice with a matching `lang, tld` pair.
+
+        A name can either be an alias or of the form `lang@tld`.
+        """
+
         if "@" in name:
             lang, _, tld = name.partition("@")
             return cls(lang, tld, pitch)
@@ -756,24 +780,51 @@ class Voice:
         except StopIteration:
             raise ValueError("Invalid accent")
         
-        return cls.from_pair(pair, pitch)
+        return cls(*pair, pitch)
 
-    @classmethod
-    def from_pair(cls, pair, pitch=0):
-        lang, tld = pair
-        return cls(lang, tld, pitch)
-    
-    def say(self, text):
+    def say(self, text: str):
+        """
+        Create an `AudibleText` object that can be read, using this Voice as the voice.
+        """
         return AudibleText(text, self)
     
     @property
     def accent_name(self):
+        """
+        Get this voice's name.
+
+        This is either the first in the list of aliases OR a placeholder text `??? (lang@tld)`.
+        """
         acname = self.valid_accents.get((self.lang, self.tld), f"??? ({self.lang}@{self.tld})")
         
         if isinstance(acname, tuple): return acname[0]
         return acname
     
+    @functools.cached_property
+    def transformer(self) -> sox.Transformer:
+        """
+        Compute the `sox.Transformer` this voice has after applying all the effects.
+
+        This function assumes this `Voice` was not modified ever (which it SHOULD not be).
+        Use `copy` if you want to change a `Voice`.
+        """
+        # add effects & pitch
+        # if effects are present (& enabled), pitch is ignored
+        tfm = sox.Transformer()
+
+        if self.use_effects:
+            for f in self.effects:
+                f.apply(tfm)
+        elif self.pitch != 0:
+            tfm.pitch(self.pitch)
+
+        return tfm
+
+
     def copy(self, **kwargs):
+        """
+        Copy this `Voice` but modify some parameters.
+        """
         dct = dataclasses.asdict(self)
         dct.update(kwargs)
 
@@ -781,6 +832,10 @@ class Voice:
 
 @dataclasses.dataclass
 class SoxFilter:
+    """
+    A filter (using Sox) that can be applied to a voice
+    """
+    
     fun: Callable
     args: "dict[str, Any]"
 
@@ -792,6 +847,9 @@ class SoxFilter:
         "repeat", "reverb", "reverse", "silence", "sinc", "speed", "swap", "tempo", "treble", 
         "tremolo", "trim", "upsample", "vad", "vol"
     )
+    """
+    A tuple of all supported Sox filters.
+    """
 
     def __init__(self, fun: str, args: list):
         # ex: sox.Transformer.upsample(self, factor: int)
@@ -806,14 +864,23 @@ class SoxFilter:
     
     @classmethod
     def get_filter(cls, fil: str) -> Callable:
+        """
+        Get the function version of a filter given its name
+        """
         if fil not in cls.valid_filters: raise ValueError(f"Unrecognized filter `{fil}`")
 
         return getattr(sox.Transformer, fil)
 
     def test(self):
+        """
+        Check if this filter is valid (i.e. does not have argument type errors)
+        """
         self.apply(sox.Transformer())
 
     def apply(self, tf: sox.Transformer):
+        """
+        Apply filter to a given `Transformer`.
+        """
         self.fun(tf, **self.args)
     
     def __str__(self):
@@ -821,6 +888,10 @@ class SoxFilter:
         return f"{self.fun.__name__}({params})"
 
 class AudibleText(gTTS):
+    """
+    Class that converts text into output audio
+    """
+
     AUDIO_PATH1 = CACHE_FOLDER / 'gtts_out.mp3'
     AUDIO_PATH2 = CACHE_FOLDER / 'sox_out.mp3'
 
@@ -831,28 +902,17 @@ class AudibleText(gTTS):
     def __repr__(self):
         return f"AudibleText({repr(self.text)}, voice={self.voice})"
     
-    @functools.cached_property
-    def transformer(self) -> sox.Transformer:
-        # add effects & pitch
-        # if effects are present (& enabled), pitch is ignored
-        tfm = sox.Transformer()
-
-        if self.voice.use_effects:
-            for f in self.voice.effects:
-                f.apply(tfm)
-        elif self.voice.pitch != 0:
-            tfm.pitch(self.voice.pitch)
-
-        return tfm
-
     def build_audio(self):
         self.save(self.AUDIO_PATH1)
-        self.transformer.build(str(self.AUDIO_PATH1), str(self.AUDIO_PATH2))
+        self.voice.transformer.build(
+            input_filepath=str(self.AUDIO_PATH1), 
+            output_filepath=str(self.AUDIO_PATH2)
+        )
 
-    def play_in(self, vc: discord.VoiceClient, *, after=None):
+    def play_in(self, vc: discord.VoiceClient, *, after: Callable = None):  # type: ignore
         self.build_audio()
 
-        audio = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(self.AUDIO_PATH2))
+        audio = discord.PCMVolumeTransformer(discord.FFmpegPCMAudio(str(self.AUDIO_PATH2)))
         vc.play(audio, after=after)
 
 class TTS(commands.Cog):
@@ -1173,7 +1233,7 @@ class TTS(commands.Cog):
         """
         List of valid accents (warning: slightly spammy)
         """
-        acc_list = sorted(Voice.all_accents(), key=lambda v: (not v.startswith("English"), v))
+        acc_list = sorted(Voice.all_accent_aliases(), key=lambda v: (not v.startswith("English"), v))
         await ctx.send("```\n" + "\n".join(acc_list) + "```")
 
     @tts.group(name="pitch", invoke_without_command=True)
