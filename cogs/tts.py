@@ -377,16 +377,44 @@ class ParseEffects:
 @dataclasses.dataclass
 class GuildHandler:
     """
-    Handles interaction with guild data & guild voice clients
+    This class handles the bot's `VoiceClient` for a specific guild
     """
+
     bot: Bot
     db: Database
     guild_id: int
 
     @property
-    def guild(self) -> Optional[discord.Guild]: return self.bot.get_guild(self.guild_id)
+    def guild(self):
+        """
+        The guild this guild handler deals with
+        """
+        guild = self.bot.get_guild(self.guild_id)
+        if guild is None:
+            raise ValueError("Bot cannot access this guild")
+        
+        return guild
+
     @property
-    def cog(self) -> "TTS": return self.bot.get_cog("TTS") # type: ignore
+    def voice_client(self) -> Optional[discord.VoiceClient]:
+        """
+        The voice client of the guild this guild handler deals with
+        """
+        return self.guild.voice_client  # type: ignore
+    
+    @property
+    def cog(self) -> "TTS": 
+        """
+        Reference to the TTS cog
+        """
+        return self.bot.get_cog("TTS") # type: ignore
+
+    @property
+    def bot_member(self) -> discord.Member:
+        """
+        Get the bot as a `discord.Member`
+        """
+        return self.guild.get_member(self.bot.user.id) # type: ignore
 
     def __post_init__(self):
         self.tracked_users = self.db.TwoKeyView("tracked_users", (
@@ -407,20 +435,17 @@ class GuildHandler:
 
         self.queue: "deque[AudibleText]" = deque()
 
-    def as_member(self, u: discord.abc.User):
-        return self.get_member(u.id)
-
-    def get_member(self, uid: int):
-        return (g := self.guild) and g.get_member(uid)
-
     ### ORIGINAL PROPERTIES ###
     def tracked_channel(self) -> Optional[discord.VoiceChannel]:
+        """
+        Get the current channel the bot is outputting to, or `None` if not outputting to any channel
+        """
         n_users = len(self.tracked_users)
 
         if n_users <= 0:
             self.misc_guild_data["tracked_channel"] = None
         else:
-            chan_ids = ((m := self.get_member(uid)) 
+            chan_ids = ((m := self.guild.get_member(uid)) 
                         and m.voice 
                         and m.voice.channel 
                         and m.voice.channel.id 
@@ -434,45 +459,63 @@ class GuildHandler:
 
     def is_tracked_channel(self, channel: Optional[discord.VoiceChannel]) -> bool:
         """
-        True if specified channel is the tracked channel
-        If specified channel is None, this will always return False
+        Returns whether the specified channel is the tracked channel
+        If specified channel is `None`, this will always return `False`
         """
         return channel is not None and channel == self.tracked_channel()
 
     ### VC MOVEMENT ###
-    async def join_channel(self, channel: discord.VoiceChannel):
-        vc = self.guild.voice_client
+    async def join_channel(self, channel: Optional[discord.VoiceChannel]):
+        """
+        Join the specified voice channel (or disconnect if `None`)
+        """
+        vc = self.voice_client
 
+        # verify bot can actually join this channel
         if channel is not None:
-            bot_member = self.get_member(self.bot.user.id)
-            perms = channel.permissions_for(bot_member)
+            perms = channel.permissions_for(self.bot_member)
             if not perms.connect:
                 raise commands.UserInputError("I can't connect to VC!")
 
-        if vc is None: # not in vc
+        # if bot not in VC, connect
+        # otherwise, move to the channel
+        if vc is None: 
             if channel is not None:
                 await channel.connect()
         else:
-            await vc.move_to(channel)
+            if channel is not None:
+                await vc.move_to(channel)
+            else:
+                await self.disconnect()
 
     async def disconnect(self):
-        vc = self.guild.voice_client
+        """
+        Disconnect from all voice channels
+        """
+        vc = self.voice_client
         if vc is not None:
             await vc.disconnect()
 
     async def join_tracked_channel(self):
+        """
+        Join the tracked voice channel.
+        """
         try:
             await self.join_channel(self.tracked_channel())
         except commands.UserInputError:
+            # If the code lands here, the bot was not able to join the tracked channel
+            # This implies the bot does not have the permissions to
+
+            # Remove everyone in channels the bot cannot access:
             for uid in self.tracked_users.keys():
-                member = self.get_member(uid)
-                bot_member = self.get_member(self.bot.user.id)
+                member = self.guild.get_member(uid)
 
                 member_vchan = member \
                                and member.voice \
                                and member.voice.channel # member?.voice?.channel
                 if member_vchan is None: continue
-                if not member_vchan.permissions_for(bot_member).connect:
+
+                if not member_vchan.permissions_for(self.bot_member).connect:
                     self.remove_member(member)
 
             await self.join_tracked_channel()
@@ -481,6 +524,11 @@ class GuildHandler:
 
     ### PLAY TEXT ###
     def play_text(self, text, voice=None, extra_phondict: "dict[str, tuple]" = {}):
+        """
+        Enqueue some text to the audio queue.
+
+        Voice and text substitutions can be specified.
+        """
         if voice is None: voice = Voice()
         q = self.queue
 
@@ -492,30 +540,46 @@ class GuildHandler:
         except ValueError as e:
             raise commands.UserInputError(str(e))
 
-        vc = self.guild.voice_client
-        if not vc.is_playing(): 
+        vc = self.voice_client
+        if vc is not None and not vc.is_playing(): 
             q.popleft().play_in(vc, after=lambda e: self.advance_queue())
 
-    def play_text_by(self, text, *, by: discord.abc.User):
+    def play_text_by(self, text, *, by: discord.abc.Snowflake):
+        """
+        Play text with the specified user's voice and text substitution settings.
+        """
         return self.play_text(text, self.cog.lang_prefs[by.id], self.cog.user_phondict[by.id])
 
     def advance_queue(self):
+        """
+        When text is finished being read in the text queue, 
+        this function is called to advance onto the next text to be read.
+        """
+
         q = self.queue
 
         if q: 
-            q.popleft().play_in(self.guild.voice_client, after=lambda e: self.advance_queue())
+            q.popleft().play_in(self.voice_client, after=lambda e: self.advance_queue())
 
     @staticmethod
-    def _sub(fn):
-        def cb(m: re.Match):
-            id = int(m[1])
-            dobj = fn(id)
+    def _sub(fn: Callable[[int], "Any | None"]) -> Callable[[re.Match[str]], str]:
+        """
+        Function that converts a `discord.Object` getter function into a match substitution 
+        that takes a match to the name of the `discord.Object`.
+        """
+        def cb(m: re.Match[str]):
+            oid = int(m[1])
+            dobj = fn(oid)
 
             if dobj: return f"{dobj.name}"
             return m.string
         return cb
     
-    def process_text(self, text: str, *, extra_phondict: "dict[str, tuple]" = {}) -> Optional[str]:
+    def process_text(self, text: str, *, extra_phondict: "dict[str, tuple]" = {}):
+        """
+        This function cleans up input text so it can be read out in voice.
+        """
+
         # remove escaping backslashes
         text = re.sub(r"\\([^A-Za-z0-9])", lambda m: m[1], text)
 
@@ -523,10 +587,10 @@ class GuildHandler:
         # https://www.urlregex.com
         text = re.sub(r"http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+", "", text)
 
-        # replace pings with their name 
-        text = re.sub(r"<#(\d+)>", self._sub(self.bot.get_channel), text)
-        text = re.sub(r"<@!?(\d+)>", self._sub(self.bot.get_user), text)
-        text = re.sub(r"<@&(\d+)>", self._sub(self.guild.get_role), text)
+        # replace object mentions with their name 
+        text = re.sub(r"<#(\d+)>",   self._sub(self.bot.get_channel), text)
+        text = re.sub(r"<@!?(\d+)>", self._sub(self.bot.get_user),    text)
+        text = re.sub(r"<@&(\d+)>",  self._sub(self.guild.get_role),  text)
         text = re.sub(r"<a?:(\w+?):\d+>", lambda m: m[1], text)
 
         # replace spoilers with SPOILER
@@ -536,9 +600,10 @@ class GuildHandler:
         text = re.sub(r"\|\|[\S\s]+?\|\|", "SPOILER", text)
 
         # apply phondict
-        phondict = {}
-        phondict.update(self.cog.phondict)
-        phondict.update(extra_phondict)
+        phondict = {
+            **self.cog.phondict,
+            **extra_phondict
+        }
 
         for k, [v, w] in phondict.items():
             if w:
@@ -552,8 +617,14 @@ class GuildHandler:
 
     ### PURELY GUILD DATA MODIF ###
 
-    def add_member(self, user: discord.abc.User):
-        member = self.as_member(user)
+    def add_member(self, user: discord.abc.Snowflake):
+        """
+        Add a member to the list of tracked members
+        """
+
+        member = self.guild.get_member(user.id)
+        if member is None: raise ValueError(f"Member {user.id} could not be found")
+
         vchan_id = member \
                    and member.voice \
                    and member.voice.channel \
@@ -570,22 +641,44 @@ class GuildHandler:
         
         self.clear_timeout(member)
 
-    def remove_member(self, user: discord.abc.User):
-        self.tracked_users.pop(user.id, None)
+    def remove_member(self, user: Optional[discord.abc.Snowflake]):
+        """
+        Remove a member from the list of tracked members
+        """
 
-    def set_timeout(self, user: discord.abc.User, timeout: float):
-        if timeout is not None:
-            timeout = dt.datetime.now(tz=dt.timezone.utc) + dt.timedelta(seconds=timeout)
+        if user is not None: 
+            self.tracked_users.pop(user.id, None)
+
+    def set_timeout(self, user: discord.abc.Snowflake, secs: Optional[float]):
+        """
+        Add a timeout to a user before they are disconnected from TTS.
+        """
+
+        timeout = None
+        if secs is not None:
+            timeout = dt.datetime.now(tz=dt.timezone.utc) + dt.timedelta(seconds=secs)
+
         self.tracked_users[user.id] = (timeout, )
     
     def wipe_phantom_users(self):
-        # Users that have no timeout but aren't in VC
-        for uid, *_ in self.db.execute("SELECT user_id FROM tracked_users WHERE guild_id = ? AND timeout IS NULL", (self.guild_id,)).fetchall():
-            m = self.get_member(uid)
+        """
+        Remove users that have no timeout but aren't in VC
+        """
+
+        for uid, *_ in self.db.execute("""
+            SELECT user_id 
+            FROM tracked_users 
+            WHERE guild_id = ? 
+            AND timeout IS NULL
+        """, (self.guild_id,)).fetchall():
+            m = self.guild.get_member(uid)
             if m is not None and not self.is_tracked_channel(m.voice and m.voice.channel):
                 self.remove_member(m)
 
-    def clear_timeout(self, user: discord.abc.User):
+    def clear_timeout(self, user: discord.abc.Snowflake):
+        """
+        Remove a member's timeout.
+        """
         self.set_timeout(user, None)
     ###
     

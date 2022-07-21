@@ -348,7 +348,7 @@ class RowView(_RowMixin[K, V]):
 
         self.sql2v = self.v2sql = lambda t: t
 
-    def get_row(self, key):
+    def get_row(self, key: K):
         return _MutRow(self.db, self.table, (key,))
 
     def __iter__(self) -> "Iterator[K]":
