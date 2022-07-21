@@ -4,7 +4,6 @@ import yaml
 import core.sql as sql # ONLY FOR PYLANCE LINTER PURPOSES
 import traceback
 import logging
-import os
 import sys
 
 import discord
@@ -56,15 +55,10 @@ class Bot(commands.Bot):
         self.logger.info(f'Users   : {len(set(self.get_all_members()))}')
         self.logger.info(f'Channels: {len(list(self.get_all_channels()))}')
 
-    def load_module(self, module: str, force_load: bool = False):
+    def load_module(self, module: str):
         """
         Loads a module
         """
-        if not force_load:
-            # possible names for this module
-            aliases = {module}
-            if module.startswith('cogs.'): aliases.add(module[len('cogs.'):])
-
         try:
             self.load_extension(module)
         except Exception as e:
@@ -75,7 +69,7 @@ class Bot(commands.Bot):
         else:
             self.logger.info(f'Loaded module {module}.')
 
-    def load_dir(self, directory: str, force_load: bool = False):
+    def load_dir(self, directory: str):
         """
         Loads all modules in a directory
         """
@@ -86,22 +80,11 @@ class Bot(commands.Bot):
 
         modules = [f"{directory}.{p.stem}" for p in path.iterdir() if p.suffix == ".py"]
         for m in modules:
-            self.load_module(m, force_load=force_load)
-
-    def get_cog_logger(self, cog: commands.Cog):
-        """
-        Gets the logger for a cog.
-        This can be used during cog initialization as `bot.get_cog_logger(self)` to obtain a logger before the cog is registered.
-        """
-        return self.logger.getChild(cog.qualified_name.lower())
-
-    def add_cog(self, cog: commands.Cog, *, override: bool = False) -> None:
-        cog.logger = self.get_cog_logger(cog)
-        super().add_cog(cog, override=override)
+            self.load_module(m)
 
     def run(self, token):
-        self.load_dir("core", True)
-        self.load_dir("cogs", False)
+        self.load_dir("core")
+        self.load_dir("cogs")
 
         self.logger.info(f'Loaded {len(self.cogs)} cogs')
         super().run(token)
