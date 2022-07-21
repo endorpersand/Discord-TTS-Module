@@ -45,7 +45,11 @@ class Database:
         return cls.DB_DIR.glob("*.db")
 
     def tables(self):
-        return [r[0] for r in self.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()]
+        return [r[0] for r in self.execute("""
+            SELECT name 
+            FROM sqlite_master 
+            WHERE type='table'
+        """).fetchall()]
 
     def execute(self, cmd: str, params: "tuple | None" = None):
         cur = self.con.cursor()
@@ -58,13 +62,21 @@ class Database:
 
     def create_table(self, table: str, cols: "Iterable[str]"):
         sep = ",\n"
-        return self.execute(f"""CREATE TABLE IF NOT EXISTS {table} (\n{sep.join(cols)}\n)""")
+        return self.execute(f"""
+            CREATE TABLE IF NOT EXISTS {table} (\n{sep.join(cols)}\n)
+        """)
     
     def drop_table(self, table: str):
-        return self.execute(f"""DROP TABLE IF EXISTS {table}""")
+        return self.execute(f"""
+            DROP TABLE IF EXISTS {table}
+        """)
     
     def table_exists(self, table: str):
-        return bool(self.execute("""SELECT count(*) FROM sqlite_master WHERE type='table' AND name=?""", (table,)).fetchone()[0])
+        return bool(self.execute("""
+            SELECT count(*) 
+            FROM sqlite_master 
+            WHERE type='table' AND name=?""", 
+        (table,)).fetchone()[0])
 
     def RowView(self, table: str, cols: "Iterable[str] | None" = None):
         """
@@ -235,14 +247,20 @@ class _MutRow(Sequence):
         self.table = table
         self.keys = tuple(keys)
 
-        self._cols:       "tuple[str, ...]" = tuple(cn for cn, *_ in self.db.execute("SELECT name FROM pragma_table_info(?)", (self.table,)))
+        self._cols:       "tuple[str, ...]" = tuple(cn for cn, *_ in self.db.execute("""
+            SELECT name
+            FROM pragma_table_info(?)
+        """, (self.table,)))
         
         self._key_cols:   "tuple[str, ...]" = self._cols[:len(self.keys)]
         self._value_cols: "tuple[str, ...]" = self._cols[len(self.keys):]
         
         self._where_clause = ' AND '.join(f"{c} = ?" for c in self._key_cols)
 
-        self.has_defaults = any(e is not None for e, *_ in db.execute("SELECT dflt_value FROM pragma_table_info(?)", (table,)).fetchall()[len(self.keys):])
+        self.has_defaults = any(e is not None for e, *_ in db.execute("""
+            SELECT dflt_value 
+            FROM pragma_table_info(?)
+        """, (table,)).fetchall()[len(self.keys):])
 
     def _resolve_index(self, index: "str | int | slice"):
         if isinstance(index, str):
@@ -288,11 +306,17 @@ class _MutRow(Sequence):
 
 
         if self.exists():
-                return self.db.execute(f"""UPDATE {self.table} SET {','.join(c + " = ?" for c in cols)} WHERE {self._where_clause}""", values + self.keys)
+                return self.db.execute(f"""
+                    UPDATE {self.table} SET {','.join(c + " = ?" for c in cols)} 
+                    WHERE {self._where_clause}""", values + self.keys
+                )
         else:
             modified_cols = self._key_cols + cols
             col_values = self.keys + values
-            return self.db.execute(f"""REPLACE INTO {self.table} ({",".join(modified_cols)}) VALUES ({placeholder(len(modified_cols))})""", col_values)
+            return self.db.execute(f"""
+                REPLACE INTO {self.table} ({",".join(modified_cols)}) 
+                VALUES ({placeholder(len(modified_cols))})
+            """, col_values)
 
     def __len__(self):
         return len(self._value_cols)
@@ -304,26 +328,42 @@ class _MutRow(Sequence):
         return itertools.repeat(None, len(self._value_cols))
 
     def _row_match(self):
-        return self.db.execute(f"SELECT * FROM {self.table} WHERE {self._where_clause}", self.keys)
+        return self.db.execute(f"""
+            SELECT * 
+            FROM {self.table}
+            WHERE {self._where_clause}
+        """, self.keys)
 
     def exists(self) -> bool:
         exists = self._row_match().fetchone() is not None
         if not exists:
             if self.has_defaults:
-                self.db.execute(f"""REPLACE INTO {self.table} ({",".join(self._key_cols)}) VALUES ({placeholder(len(self.keys))})""", self.keys)
+                self.db.execute(f"""
+                    REPLACE INTO {self.table} ({",".join(self._key_cols)}) 
+                    VALUES ({placeholder(len(self.keys))})
+                """, self.keys)
             exists = self._row_match().fetchone() is not None
         
         return exists
 
     def replace(self, tpl: Iterable):
         entry = self.keys + tuple(tpl)
-        return self.db.execute(f"""REPLACE INTO {self.table} VALUES ({placeholder(len(entry))})""", entry)
+        return self.db.execute(f"""
+            REPLACE INTO {self.table} 
+            VALUES ({placeholder(len(entry))})
+        """, entry)
 
     def clear(self):
-        return self.db.execute(f"""DELETE FROM {self.table} WHERE {self._where_clause}""", self.keys)
+        return self.db.execute(f"""
+            DELETE FROM {self.table} 
+            WHERE {self._where_clause}
+        """, self.keys)
     
     def __repr__(self):
-        return f"""<{self.__class__.__qualname__} [{','.join(repr(v) for v in self.keys)}|{','.join(repr(v) for v in self)}]>"""
+        keys = ','.join(repr(v) for v in self.keys)
+        values = ','.join(repr(v) for v in self)
+        
+        return f"""<{self.__class__.__qualname__} [{keys}|{values}]>"""
 
 class RowView(_RowMixin[K, V]):
     def __init__(self, db: Database, table: str, cols: "Iterable[str] | None" = None):
@@ -344,7 +384,10 @@ class RowView(_RowMixin[K, V]):
                 raise TypeError("Missing argument cols")
         
         # Grab primary key
-        self.pk = db.execute("SELECT name FROM pragma_table_info(?)", (table,)).fetchone()[0]
+        self.pk = db.execute("""
+            SELECT name 
+            FROM pragma_table_info(?)
+        """, (table,)).fetchone()[0]
 
         self.sql2v = self.v2sql = lambda t: t
 
@@ -396,10 +439,16 @@ class SetView(Mapping[Any, MutableSet]):
         return _SetEntriesView(self.db, self.table, key)
 
     def __iter__(self):
-        return (pk for pk, *_ in self.db.execute(f"SELECT DISTINCT {self.PK} FROM {self.table}"))
+        return (pk for pk, *_ in self.db.execute(f"""
+            SELECT DISTINCT {self.PK} 
+            FROM {self.table}
+        """))
 
     def __len__(self):
-        return self.db.execute(f"SELECT COUNT(DISTINCT {self.PK}) FROM {self.table}").fetchone()[0]
+        return self.db.execute(f"""
+            SELECT COUNT(DISTINCT {self.PK}) 
+            FROM {self.table}
+        """).fetchone()[0]
     
     def __repr__(self):
         return "{" + ", ".join(f"{repr(k)}: {repr(v)}" for k, v in self.items()) + "}"
@@ -416,19 +465,37 @@ class _SetEntriesView(MutableSet):
     def SK(self): return SetView.SK
 
     def __contains__(self, o):
-        return bool(self.db.execute(f"SELECT COUNT(*) FROM {self.table} WHERE {self.PK} = ? AND {self.SK} = ?", (self.dkey, o)).fetchone()[0])
+        return bool(self.db.execute(f"""
+            SELECT COUNT(*) 
+            FROM {self.table} 
+            WHERE {self.PK} = ? AND {self.SK} = ?
+        """, (self.dkey, o)).fetchone()[0])
     
     def __iter__(self):
-        return (e for e, *_ in self.db.execute(f"SELECT {self.SK} FROM {self.table} WHERE {self.PK} = ?", (self.dkey,)))
+        return (e for e, *_ in self.db.execute(f"""
+            SELECT {self.SK} 
+            FROM {self.table} 
+            WHERE {self.PK} = ?
+        """, (self.dkey,)))
 
     def __len__(self):
-        return self.db.execute(f"SELECT COUNT(*) FROM {self.table} WHERE {self.PK} = ?", (self.dkey,)).fetchone()[0]
+        return self.db.execute(f"""
+            SELECT COUNT(*) 
+            FROM {self.table} 
+            WHERE {self.PK} = ?
+        """, (self.dkey,)).fetchone()[0]
 
     def add(self, o):
-        self.db.execute(f"INSERT OR IGNORE INTO {self.table} VALUES (?, ?)", (self.dkey, o))
+        self.db.execute(f"""
+            INSERT OR IGNORE INTO {self.table} 
+            VALUES (?, ?)
+        """, (self.dkey, o))
 
     def discard(self, o):
-        self.db.execute(f"DELETE FROM {self.table} WHERE {self.PK} = ? AND {self.SK} = ?", (self.dkey, o))
+        self.db.execute(f"""
+            DELETE FROM {self.table} 
+            WHERE {self.PK} = ? AND {self.SK} = ?
+        """, (self.dkey, o))
 
     def __repr__(self):
         if len(self) == 0: return "{<empty set>}"
@@ -490,13 +557,25 @@ class _TKEntryView(_RowMixin[Any, Sequence]):
         self.sql2v = sql2v
 
     def __contains__(self, o):
-        return bool(self.db.execute(f"SELECT COUNT(*) FROM {self.table} WHERE {self.k1} = ? AND {self.k2} = ?", (self.k1v, o)).fetchone()[0])
+        return bool(self.db.execute(f"""
+            SELECT COUNT(*) 
+            FROM {self.table} 
+            WHERE {self.k1} = ? AND {self.k2} = ?
+        """, (self.k1v, o)).fetchone()[0])
     
     def __iter__(self):
-        return (k2 for k2, *_ in self.db.execute(f"SELECT {self.k2} FROM {self.table} WHERE {self.k1} = ?", (self.k1v,)))
+        return (k2 for k2, *_ in self.db.execute(f"""
+            SELECT {self.k2} 
+            FROM {self.table} 
+            WHERE {self.k1} = ?
+        """, (self.k1v,)))
 
     def __len__(self):
-        return self.db.execute(f"SELECT COUNT(*) FROM {self.table} WHERE {self.k1} = ?", (self.k1v,)).fetchone()[0]
+        return self.db.execute(f"""
+            SELECT COUNT(*) 
+            FROM {self.table} 
+            WHERE {self.k1} = ?
+        """, (self.k1v,)).fetchone()[0]
     
     def get_row(self, key):
         return _MutRow(self.db, self.table, (self.k1v, key))
