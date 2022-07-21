@@ -795,14 +795,19 @@ class TTS(commands.Cog):
         if gh.is_tracked_channel(author_vchan):
             gh.play_text_by(f"{ctx.author.name} says hello!", by=ctx.author)
 
-    @commands.group()
     async def tts(self, ctx):
-        """
-        When activated, this bot repeats anything you say in a voice context channel to your VC.
-
-        To have this bot ignore your message, start your message with `#`. (e.g. `# hello!!`)
-        """
         pass
+    tts.__doc__ = """
+        When activated (with `tts on`), the bot will repeat anything you type in a voice context
+         channel (any channel under `tts channels`, your DMs, or the channel's integrated chat)
+        into your current VC.
+
+        If you want the bot to ignore a message you send in a voice context channel, start your message
+        with `#`. Example: ```
+        # hello! this message is ignored!
+        ```
+    """
+    tts = commands.group()(tts)
 
     @tts.command(name="on", aliases=["connect", "join"])
     @commands.check(in_vc)
