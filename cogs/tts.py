@@ -31,10 +31,11 @@ DEFAULT_VC_TEXT = ("voice-context", "vc", "vc-text")
 Channels that are automatically included as voice context channels if found.
 """
 
-CACHE_FOLDER = Path("cache")
+CACHE_FOLDER = Path("_cache")
 """
 Audio files have to be created to temporarily store sent messages. They are saved to this folder.
 """
+CACHE_FOLDER.mkdir(exist_ok=True)
 
 def in_vc(ctx: commands.Context):
     """

@@ -6,6 +6,13 @@ from collections.abc import MutableSet, Iterable, Iterator, Sequence
 from pathlib import Path
 from typing import Any, Callable, TypeVar, Mapping, MutableMapping
 
+DB_DIR = Path('_db')
+"""
+Folder where databases are stored.
+"""
+
+DB_DIR.mkdir(exist_ok=True)
+
 def scrub(table_name):
     return ''.join( chr for chr in table_name if chr.isalnum() or chr in "_" )
 
@@ -13,9 +20,8 @@ def placeholder(n):
     return ",".join("?" * n)
 
 class Database:
-    DB_DIR = Path('data') / 'db'
     def __init__(self, db: str, *, require_exists=False, readonly=False, use_row_type=False):
-        self.path = self.DB_DIR / db
+        self.path = DB_DIR / db
         if require_exists and not self.path.exists(): raise ValueError(f"Database {db} does not exist")
         
         if readonly:

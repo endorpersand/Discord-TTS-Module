@@ -11,8 +11,8 @@ config/token.txt
 __pycache__/
 
 # data files
-data/**/*.*
-cache/**/*.*
+_db/**/*.*
+_cache/**/*.*
 
 # let .gitkeep override all
 !**/.gitkeep

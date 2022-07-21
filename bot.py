@@ -1,4 +1,5 @@
-import core.sql # ONLY FOR PYLANCE LINTER PURPOSES
+import io
+import core.sql as sql # ONLY FOR PYLANCE LINTER PURPOSES
 import traceback
 import logging
 import os
@@ -12,7 +13,7 @@ from pathlib import Path
 
 
 class Bot(commands.Bot):
-    Database: "type[core.sql.Database]"
+    Database: "type[sql.Database]"
     
     def __init__(self, command_prefix='?', *args, **kwargs):
         logging.basicConfig(level=logging.INFO, format='[%(name)s %(levelname)s] %(message)s')
@@ -40,6 +41,15 @@ class Bot(commands.Bot):
         info = sys.exc_info()
         info = traceback.format_exception(*info, chain=False)
         self.logger.error('Unhandled exception - {}'.format(''.join(info)))
+
+    async def on_command_error(ctx: commands.Context, exception: Exception):
+        bot = ctx.bot
+
+        info = traceback.format_exception(type(exception), exception, exception.__traceback__, chain=False)
+        bot.logger.error('Unhandled command exception - {}'.format(''.join(info)))
+        errorfile = discord.File(io.StringIO(''.join(info)), 'traceback.txt')
+
+        await ctx.send(f'{type(exception).__name__}: {exception}', file=errorfile)
 
     async def on_ready(self):
         self.logger.info(f'Connected to Discord')
