@@ -243,7 +243,7 @@ class ParseEffects:
         If the next token cannot be parsed as an `int`, return `NO_MATCH`.
         """
         try:
-            v = int(self.peek())
+            v = int(self.peek()) # type: ignore
         except (ValueError, TypeError):
             return self.NO_MATCH
         
@@ -266,7 +266,7 @@ class ParseEffects:
         If the next token cannot be parsed as a `float`, return `NO_MATCH`.
         """
         try:
-            v = float(self.peek())
+            v = float(self.peek()) # type: ignore
         except (ValueError, TypeError):
             return self.NO_MATCH
         
