@@ -108,12 +108,15 @@ def sf_from_json(o: "dict[str, Any]") -> "SoxFilter | dict[str, Any]":
 
 class ParseEffects:
     """
-    Class to parse effect arguments.
+    Parser that reads arguments to `tts effects`.
 
-    Yes. I manually created a whole parser just to read effect arguments.
-    What are you going to do about it?
+    This class does not verify that arguments provided match the argument types of the sox filter;
+    it only converts a string into a list of Python objects.
 
-    ```
+    However, the sox filter itself verifies the arguments match, so woohoo.
+
+    The grammar of the parser in EBNF-inspired form:
+    ```ebnf
     list  = "[" (unit),* "]"
     dict  = "{" (int ":" unit),* "}" # note that only dict[int, *] is valid
     bool  = "true" | "false"
@@ -125,30 +128,66 @@ class ParseEffects:
 
     unit  = ? any token above ?
     ```
+
+    Usage: `[*ParseEffects(argument_string)]`
     """
+
+    # You: Wait. Did you manually write a whole parser JUST to read effect arguments?
+    # Me: Yes. And?
+
     NO_MATCH = object()
+    """
+    Sentinel object designating that the next token could not be matched to the given type.
+    """
 
     def __init__(self, arg_str: str):
         norm = "".join(c for c in arg_str.lower() if c.isascii and c.isprintable)
-        self.tokens: "list[str]" = [t for s in re.findall(r"\S+", norm) for t in re.split(r"([{}()\[\],:])", s) if t != ""]
+
+        # the list of tokens consists of "{", "}", "(", ")", "[", "]", ",", ":", 
+        # and any words (miscellaneous text separated by spaces)
+
+        # whitespace is ignored.
+
+        self.tokens: "list[str]" = [
+            t for s in re.findall(r"\S+", norm) for t in re.split(r"([{}()\[\],:])", s) if t != ""
+        ]
         self.cursor = 0
     
     def peek(self):
+        """
+        Look forward to the next token (but do not advance the cursor).
+
+        If the parser reaches the end of the argument list, return `None`.
+        """
         if self.cursor >= len(self.tokens): return None
         return self.tokens[self.cursor]
 
     def next(self):
+        """
+        Look forward to the next token (and advance the cursor).
+
+        If the parser reaches the end of the argument list, return `None`.
+        """
         val = self.peek()
         self.cursor += 1
         return val
 
     def matches(self, string: str) -> bool:
+        """
+        Check if the next token matches a specified string.
+
+        If it does, advance the cursor and return `True`. Otherwise, do nothing and return `False`.
+        """
         hit = self.peek() == string
         if hit: self.cursor += 1
 
         return hit
 
     def err_at_cursor(self, msg: str):
+        """
+        Throw a `ValueError` with a given message at the current cursor point.
+        """
+
         if self.cursor >= len(self.tokens):
             l, m = " ".join(self.tokens), "[EOL]"
             raise ValueError(f"{msg}:\n{l}**{m}**")
@@ -160,7 +199,13 @@ class ParseEffects:
 
             raise ValueError(f"{msg}:\n{l}**{m}**...")
 
-    def require(self, match_fn: Callable, expected: str = ""):
+    def require(self, match_fn: Callable[[], T], expected: str = ""):
+        """
+        Require that the next token is matched by the specified match function.
+
+        Optionally provide a parameter to note in the error message what token was expected.
+        """
+
         hit = match_fn()
 
         if hit is self.NO_MATCH:
@@ -170,6 +215,9 @@ class ParseEffects:
         return hit
 
     def require_str(self, match_str: str):
+        """
+        Require that the next token matches a specified string.
+        """
         hit = self.matches(match_str)
 
         if not hit:
@@ -178,12 +226,20 @@ class ParseEffects:
         return match_str
 
     def match_trool(self):
+        """
+        Match the next token to `true`, `false`, or `none`.
+        If the next token does not match, return `NO_MATCH`.
+        """
         if self.matches("true"): return True
         elif self.matches("false"): return False
         elif self.matches("none"): return None
         return self.NO_MATCH
 
     def match_int(self):
+        """
+        Match the next token as a `int`.
+        If the next token cannot be parsed as an `int`, return `NO_MATCH`.
+        """
         try:
             v = int(self.peek())
         except (ValueError, TypeError):
@@ -193,12 +249,20 @@ class ParseEffects:
         return v
     
     def match_str(self):
+        """
+        Match the next token as an alphabetic string.
+        If the next token cannot be parsed as an alphabetic string, return `NO_MATCH`.
+        """
         pk = self.peek()
         if pk is not None and pk.isalpha():
             return self.next()
         return self.NO_MATCH
 
     def match_float(self):
+        """
+        Match the next token as a `float`.
+        If the next token cannot be parsed as a `float`, return `NO_MATCH`.
+        """
         try:
             v = float(self.peek())
         except (ValueError, TypeError):
@@ -208,16 +272,27 @@ class ParseEffects:
         return v
 
     def match_pair(self):
+        """
+        Match the next few tokens a pair of floats: `(float, float)`.
+
+        If the next token is not `(`, these tokens do not represent a pair. Return `NO_MATCH`.
+        If the parameters of the pairs are not floats, the parser will error.
+        """
         if self.matches("("):
             f1 = self.require(self.match_float, expected="float")
             self.require_str(",")
             f2 = self.require(self.match_float, expected="float")
             self.require_str(")")
 
-            return (f1, f2)
+            return typing.cast("tuple[float, float]", (f1, f2))
         return self.NO_MATCH
     
     def match_list(self):
+        """
+        Match the next few tokens to a list.
+
+        If the next token is not `[`, these tokens do not represent a list. Return `NO_MATCH`.
+        """
         if self.matches("["):
             out = []
 
@@ -235,14 +310,25 @@ class ParseEffects:
         return self.NO_MATCH
     
     def match_entry(self):
+        """
+        Match the next few tokens to an entry. `int: unit`.
+
+        This match function can return `NO_MATCH` if the next object is not an entry 
+        or error if it is partially through parsing an entry and cannot recognize the tokens as an entry.
+        """
         key = self.match_int()
         if key is not self.NO_MATCH:
+            key = typing.cast(int, key)
+
             self.require_str(":")
             value = self.require(self.match_unit, expected="value")
             return (key, value)
         return self.NO_MATCH
 
     def match_dict(self):
+        """
+        Matches the next few tokens to a dict.
+        """
         if self.matches("{"):
             out = {}
 
@@ -263,6 +349,10 @@ class ParseEffects:
         return self.NO_MATCH
     
     def match_unit(self):
+        """
+        Matches most types. If it cannot find any match using any of the match functions, 
+        then return `NO_MATCH`.
+        """
         match_fns = (
             self.match_trool,
             self.match_int,
