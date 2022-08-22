@@ -1,4 +1,4 @@
-git+https://github.com/Rapptz/discord.py@45d498c1#[voice]
+discord.py[voice]>=2
 PyYAML
 Pillow
 PyNaCl

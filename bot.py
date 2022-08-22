@@ -52,12 +52,12 @@ class Bot(commands.Bot):
         self.logger.info(f'Users   : {len(set(self.get_all_members()))}')
         self.logger.info(f'Channels: {len(list(self.get_all_channels()))}')
 
-    def load_module(self, module: str):
+    async def load_module(self, module: str):
         """
         Loads a module
         """
         try:
-            self.load_extension(module)
+            await self.load_extension(module)
         except Exception as e:
             self.logger.exception(f'Failed to load module {module}:')
             print()
@@ -66,24 +66,11 @@ class Bot(commands.Bot):
         else:
             self.logger.info(f'Loaded module {module}.')
 
-    def load_dir(self, directory: str):
-        """
-        Loads all modules in a directory
-        """
-        path = Path(directory)
-        if not path.is_dir(): 
-            self.logger.info(f"Directory {directory} does not exist, skipping")
-            return
+    async def start(self, token: str, *, reconnect: bool = True) -> None:
+        await self.load_module("tts")
 
-        modules = [f"{directory}.{p.stem}" for p in path.iterdir() if p.suffix == ".py"]
-        for m in modules:
-            self.load_module(m)
-
-    def run(self, token):
-        self.load_module("tts")
-        
         self.logger.info(f'Loaded {len(self.cogs)} cogs')
-        super().run(token)
+        return await super().start(token, reconnect=reconnect)
 
 if __name__ == '__main__':
     bot = Bot()

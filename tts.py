@@ -1110,5 +1110,5 @@ class TTS(commands.Cog):
     def cog_unload(self):
         self.db.close()
 
-def setup(bot):
+async def setup(bot):
     bot.add_cog(TTS(bot))

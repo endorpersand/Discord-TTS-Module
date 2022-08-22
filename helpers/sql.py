@@ -585,6 +585,3 @@ class _TKEntryView(_RowMixin[Any, Sequence]):
     
     def get_row(self, key):
         return _MutRow(self.db, self.table, (self.k1v, key))
-
-def setup(bot):
-    bot.Database = Database
