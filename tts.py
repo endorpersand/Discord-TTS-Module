@@ -1111,4 +1111,4 @@ class TTS(commands.Cog):
         self.db.close()
 
 async def setup(bot):
-    bot.add_cog(TTS(bot))
+    await bot.add_cog(TTS(bot))
