@@ -97,7 +97,7 @@ class Voice:
         self.lang = lang
         self.tld = tld
         self.pitch = min(max(-12, pitch), 12)
-        self.effects = list(effects) if effects is not None else ()
+        self.effects = list(effects) if effects is not None else []
         self.use_effects = bool(use_effects)
 
     @classmethod
